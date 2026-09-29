@@ -45,9 +45,9 @@ npm install --prefix .newman-tools --no-save --no-package-lock --no-audit --no-f
 set -Eeuo pipefail
 set +x
 umask 077
-.newman-tools/node_modules/.bin/newman run postman/reqres.collection.json \
 mkdir -p reports
-newman run postman/reqres.collection.json \
+
+.newman-tools/node_modules/.bin/newman run postman/reqres.collection.json \
   --env-var "api_key=$REQRES_API_KEY" \
   --reporters cli,junit \
   --reporter-junit-export reports/newman.xml \
