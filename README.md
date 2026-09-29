@@ -1,125 +1,373 @@
-# Implementasi mini project Newman ReqRes di Jenkins
+# Mini project Jenkins + Newman + ReqRes: panduan dan troubleshooting
 
-> [!info] Konteks
-> Tes manual dan cron di `app2` sudah berjalan. Node/Newman berada di `/home/rikofirnando/.nvm/versions/node/v24.18.0/bin/`. Jenkins agent sebelumnya memakai label `jenkins-agent-01`; pastikan label itu menunjuk mesin yang memiliki Node/Newman tersebut. Panduan ini menggunakan **Pipeline from SCM** sehingga collection dan Jenkinsfile diambil dari Git pada setiap build.
+> [!info] Status pembelajaran — 29 September 2026
+> Collection sudah berhasil dijalankan manual, melalui cron Linux, dan melalui **Jenkins Pipeline**. Pipeline Jenkins terbaru di branch `main` sudah memuat perbaikan untuk instalasi Newman pada agent dan perintah Newman yang sempat tersambung keliru. **Jadwal Jenkins masih dikomentari** dalam Jenkinsfile yang diperiksa; aktifkan hanya bila ingin build otomatis.
 
-## 1. Apa yang berubah dari cron?
+## 1. Gambaran alur
 
-| Cron Linux | Jenkins Pipeline |
-|---|---|
-| Jadwal pada `crontab -e` | Jadwal pada Jenkinsfile `triggers { cron(...) }` |
-| Key di `$HOME/.config/newman/reqres.env` | Key di Jenkins **Secret text** credential |
-| Script berjalan dari folder `/home/rikofirnando/Testing/...` | Collection dibaca dari **workspace** hasil checkout Git |
-| Hasil di `cron.log` dan `logs/` | Output di **Console Output**, hasil assertion di **Test Result** |
+```mermaid
+flowchart TD
+    A[GitHub: Jenkinsfile dan collection] --> B[Jenkins: Pipeline from SCM]
+    B --> C[Agent: checkout repository]
+    C --> D[Periksa Node dan collection]
+    D --> E[Pasang Newman di workspace]
+    E --> F[Ambil API key dari Jenkins Credentials]
+    F --> G[Jalankan request dan assertion]
+    G --> H[Publikasikan laporan JUnit]
+```
 
-Jenkins job ini tidak memakai file `reqres.env` ataupun cron Linux. Anda bisa mempertahankan cron untuk perbandingan, tetapi dua jadwal akan sama-sama memanggil ReqRes bila keduanya aktif.
+**Peran masing-masing komponen:**
 
-## 2. Siapkan repository
+| Komponen | Fungsi |
+| --- | --- |
+| Postman Collection | Menyimpan 8 request ReqRes dan assertion-nya. |
+| Newman | Menjalankan collection melalui CLI. |
+| GitHub | Menyimpan Jenkinsfile dan collection agar Jenkins mengambil versi yang telah di-push. |
+| Jenkins controller | Mengatur job, credential, build, dan jadwal. |
+| Jenkins agent `jenkins-agent-01` | Menjalankan shell, npm, Newman, dan request API. |
+| Jenkins Credentials | Menyimpan API key sebagai **Secret text** ber-ID `reqres-api-key`. |
+| JUnit report | Menampilkan hasil tes di halaman build Jenkins. |
 
-Di repository Git yang akan digunakan oleh job baru, buat struktur ini:
+API key tidak ditaruh di GitHub atau Jenkinsfile. Job Jenkins juga **tidak memakai** file `$HOME/.config/newman/reqres.env` milik percobaan cron Linux.
+
+## 2. Susunan repository
+
+Repository: [rikofirnando/newman-reqres-mini-project](https://github.com/rikofirnando/newman-reqres-mini-project), branch `main`.
 
 ```text
-repo-anda/
+newman-reqres-mini-project/
 ├── Jenkinsfile
 └── postman/
     └── reqres.collection.json
 ```
 
-- Salin `Jenkinsfile` yang disertakan bersama panduan ini ke **root repository**.
-- Salin collection dari project mini Anda ke `postman/reqres.collection.json`. Collection harus versi yang sudah diperbaiki dengan `{{api_key}}` dan `{{base_url}}`.
-- **Jangan** commit `.config/newman/reqres.env`, `logs/`, laporan JSON, atau API key.
-- Commit dan push kedua file ke branch latihan yang akan dibaca job Jenkins.
+Nama file dan path di repo harus sama dengan path dalam Jenkinsfile: `postman/reqres.collection.json`. Data sensitif dan hasil build tidak perlu di-commit. Jika belum ada, tambahkan `.gitignore`:
 
-Contoh jika terminal Anda sedang berada di root repo dan file mini project ada di `~/Testing/newman-reqres-mini-project`:
-
-```bash
-mkdir -p postman
-cp "$HOME/Testing/newman-reqres-mini-project/reqres.collection.json" postman/reqres.collection.json
-# Salin Jenkinsfile dari paket ini ke root repo, lalu tinjau perubahan:
-git status --short
-git add Jenkinsfile postman/reqres.collection.json
-git commit -m "Add scheduled Newman ReqRes pipeline"
-git push
+```gitignore
+.newman-tools/
+reports/
+logs/
+cron.log
+*.env
 ```
 
-Jika belum ingin melakukan commit/push, Anda dapat membuat job Pipeline dengan script ditempel di UI dan mengganti `checkout scm` dengan konfigurasi `git` yang sesuai. Untuk panduan ini, gunakan **Pipeline script from SCM** agar `checkout scm` dan branch jelas.
+> [!warning] Sebelum `git add .`
+> Jalankan `git status --short` untuk memastikan file key dan laporan lokal tidak ikut masuk commit. `.gitignore` tidak menghapus file yang sudah telanjur dilacak Git.
 
-## 3. Pastikan agent dapat menjalankan Newman
+### Kendala awal: `src refspec main does not match any`
 
-Di Jenkins, buka **Manage Jenkins → Nodes**, lalu periksa node berlabel `jenkins-agent-01`. Label pada Jenkinsfile harus cocok dengan node yang akan menjalankan tes.
+Saat itu branch lokal masih `master`, tetapi perintahnya `git push origin main`. Git mencari branch lokal bernama `main` dan tidak menemukannya. Setelah memastikan commit sudah ada, ubah nama branch dan push:
 
-Path `/home/rikofirnando/.nvm/versions/node/v24.18.0/bin/` harus tersedia **di mesin agent**, bukan hanya di controller. Jika agent berada di mesin lain, pasang Node/Newman pada agent itu dan sesuaikan dua baris `export PATH` di Jenkinsfile. Stage **Check Newman** menampilkan versi Node/Newman dan akan berhenti jika collection tidak ada. Jenkins agent juga harus dapat menjangkau `https://reqres.in`.
+```bash
+git branch --show-current
+git status --short
+git branch -M main
+git push -u origin main
+```
 
-> [!note] Kenapa PATH ditulis dua kali?
-> Setiap `sh` Jenkins memulai shell baru. PATH yang di-`export` dalam stage **Check Newman** tidak otomatis terbawa ke stage **Run API Tests**. Inilah isu yang mirip dengan cron: terminal interaktif memuat nvm, tetapi proses otomatis belum tentu memuatnya.
+Jika belum ada commit, lakukan `git add` untuk file yang aman, `git commit`, lalu push. `git push` hanya mengirim **commit**, bukan perubahan file yang belum di-commit.
 
-## 4. Simpan API key sebagai Jenkins Credential
+## 3. Siapkan agent Jenkins
 
-1. Buka Jenkins → **Manage Jenkins → Credentials**.
-2. Pilih domain **(global)** atau folder job yang sesuai → **Add Credentials**.
+Pastikan node berlabel `jenkins-agent-01` aktif di **Manage Jenkins → Nodes**. Pada build yang berhasil diperbaiki, agent menyediakan:
+
+```text
+Node.js: v20.18.1
+npm: 9.2.0
+Newman: 6.2.2 (dipasang oleh pipeline di workspace)
+```
+
+Lokasi Node/Newman pada terminal login `rikofirnando` tidak harus sama dengan lokasi yang tersedia bagi proses Jenkins. Pipeline sekarang menggunakan `npm install --prefix .newman-tools ...` untuk memasang Newman di workspace job, lalu memanggil `.newman-tools/node_modules/.bin/newman` secara langsung.
+
+Agent memerlukan akses ke npm registry saat memasang paket dan akses ke `https://reqres.in` saat menjalankan tes. Jika ingin instalasi lebih cepat di masa depan, barulah pertimbangkan Jenkins NodeJS tool atau instalasi Newman terkelola pada agent; untuk latihan ini, instalasi per workspace lebih mudah dilacak.
+
+## 4. Buat credential API key
+
+1. Buka **Manage Jenkins → Credentials**.
+2. Pilih domain global atau folder tempat job dapat mengakses credential → **Add Credentials**.
 3. **Kind:** `Secret text`.
-4. **Secret:** tempel API key ReqRes **yang sudah diganti** (jangan tempel di Jenkinsfile).
-5. **ID:** `reqres-api-key` (harus sama persis dengan Jenkinsfile).
-6. **Description:** `ReqRes API key for Newman learning` → **Create**.
+4. **Secret:** API key ReqRes yang aktif.
+5. **ID:** `reqres-api-key` (harus identik dengan Jenkinsfile).
+6. Simpan.
 
-`withCredentials` mengikat Secret text ke variabel `REQRES_API_KEY` hanya selama stage pengujian. Jenkins akan berusaha menyamarkannya di Console Output; jangan mencetak key dengan `echo`, `env`, atau mode debug `set -x`. Credential pada agent tetap perlu digunakan hanya dalam job/branch yang Anda percaya.
+Kode `withCredentials([string(...)])` menyediakan key sebagai variabel `REQRES_API_KEY` hanya selama stage pengujian. `set +x` mencegah shell menampilkan perintah beserta argumennya. Jangan mencetak key dengan `echo`, `env`, atau log debug. Key yang pernah terpapar di percakapan sebaiknya telah diganti.
 
-## 5. Buat job Jenkins
+## 5. Buat job Pipeline from SCM
 
-1. Dashboard Jenkins → **New Item**.
-2. Nama misalnya `Learn Newman ReqRes` → pilih **Pipeline** → **OK**.
-3. Pada bagian **Pipeline**, pilih **Definition: Pipeline script from SCM**.
-4. **SCM: Git**, isi **Repository URL** dan Git credential bila repository privat.
-5. **Branches to build:** isi branch latihan yang sudah berisi Jenkinsfile dan collection, misalnya `*/feature/multibranch-demo` atau `*/main` sesuai branch yang benar-benar Anda push.
-6. **Script Path:** `Jenkinsfile` → **Save**.
+1. Di Dashboard Jenkins, klik **New Item**.
+2. Isi nama, misalnya `Learn Newman ReqRes` → pilih **Pipeline** → **OK**.
+3. Di bagian **Pipeline**, pilih **Definition: Pipeline script from SCM**.
+4. Pilih **Git**, lalu isi URL repository: `https://github.com/rikofirnando/newman-reqres-mini-project.git`.
+5. Isi credential Git jika akses repository memerlukannya.
+6. **Branches to build:** `*/main`.
+7. **Script Path:** `Jenkinsfile` → **Save**.
 
-Job Pipeline biasa lebih mudah untuk latihan pertama. Sesudah berhasil, barulah pindahkan ke Multibranch bila Anda ingin tiap branch punya pipeline sendiri.
+Karena Jenkinsfile dibaca dari Git, setiap perbaikan lokal memerlukan `git add`, `git commit`, dan `git push` sebelum tombol **Build Now** memakai perubahan tersebut.
 
-## 6. Jalankan manual di Jenkins
+## 6. Jenkinsfile yang sedang dipakai
 
-Klik **Build Now**, lalu buka build → **Console Output**. Urutan yang diharapkan:
+Berikut isi Jenkinsfile pada branch `main` saat catatan ini dibuat:
 
-1. **Checkout** mengambil repo dan branch.
-2. **Check Newman** menampilkan Node `v24.18.0` (atau versi yang dipakai agent), versi Newman, dan menemukan `postman/reqres.collection.json`.
-3. **Run API Tests** memanggil delapan request.
-4. **Test Result** menampilkan 17 assertion yang lulus; build hijau **SUCCESS**.
+```groovy
+pipeline {
+    agent { label 'jenkins-agent-01' }
 
-Pipeline menghasilkan `reports/newman.xml` lalu mempublikasikannya lewat step `junit`. Jika Newman gagal sebelum XML dibuat, `post` melewati publikasi laporan dan Console Output menunjukkan penyebabnya. Newman punya reporter JUnit dan Jenkins dapat membaca XML JUnit.
+    options {
+        skipDefaultCheckout(true)
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '14'))
+    }
 
-## 7. Aktifkan jadwal Jenkins setelah build manual sukses
+    // Aktifkan setelah Build Now berhasil. Jam mengikuti zona waktu Jenkins controller.
+    // triggers { cron('H 8 * * *') }
 
-Di Jenkinsfile, hapus komentar dari baris:
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Check Newman') {
+            steps {
+                sh '''#!/usr/bin/env bash
+set -Eeuo pipefail
+node --version
+npm --version
+test -f postman/reqres.collection.json
+'''
+            }
+        }
+
+        stage('Install Newman') {
+            steps {
+                sh '''#!/usr/bin/env bash
+set -Eeuo pipefail
+npm install --prefix .newman-tools --no-save --no-package-lock --no-audit --no-fund newman@6.2.2
+.newman-tools/node_modules/.bin/newman --version
+'''
+            }
+        }
+
+        stage('Run API Tests') {
+            steps {
+                withCredentials([string(credentialsId: 'reqres-api-key', variable: 'REQRES_API_KEY')]) {
+                    sh '''#!/usr/bin/env bash
+set -Eeuo pipefail
+set +x
+umask 077
+mkdir -p reports
+
+.newman-tools/node_modules/.bin/newman run postman/reqres.collection.json \
+  --env-var "api_key=$REQRES_API_KEY" \
+  --reporters cli,junit \
+  --reporter-junit-export reports/newman.xml \
+  --timeout-request 30000
+'''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                if (fileExists('reports/newman.xml')) {
+                    junit testResults: 'reports/newman.xml'
+                }
+            }
+        }
+    }
+}
+```
+
+Another version
+
+```
+pipeline {
+    agent none
+
+    options {
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '14'))
+    }
+
+    stages {
+        stage('Newman API Test') {
+            agent { label 'jenkins-agent-01' }
+
+            options {
+                skipDefaultCheckout(true)
+            }
+
+            steps {
+                checkout scm
+
+                echo '========================================'
+                echo 'MENJALANKAN API TEST MENGGUNAKAN NEWMAN'
+                echo '========================================'
+                echo "Job Name     : ${env.JOB_NAME}"
+                echo "Build Number : ${env.BUILD_NUMBER}"
+                echo "Node         : ${env.NODE_NAME}"
+                echo "Workspace    : ${env.WORKSPACE}"
+
+                sh '''#!/usr/bin/env bash
+set -Eeuo pipefail
+
+echo 'Node.js version:'
+node --version
+echo 'NPM version:'
+npm --version
+
+test -f postman/reqres.collection.json
+
+npm install --prefix .newman-tools \
+  --no-save --no-package-lock --no-audit --no-fund \
+  newman@6.2.2
+
+.newman-tools/node_modules/.bin/newman --version
+mkdir -p newman
+'''
+
+                withCredentials([
+                    string(credentialsId: 'reqres-api-key', variable: 'REQRES_API_KEY')
+                ]) {
+                    sh '''#!/usr/bin/env bash
+set -Eeuo pipefail
+set +x
+umask 077
+
+.newman-tools/node_modules/.bin/newman run postman/reqres.collection.json \
+  --env-var "api_key=$REQRES_API_KEY" \
+  --reporters cli,junit \
+  --reporter-junit-export newman/results.xml \
+  --timeout-request 30000
+'''
+                }
+            }
+
+            post {
+                always {
+                    script {
+                        if (fileExists('newman/results.xml')) {
+                            junit testResults: 'newman/results.xml'
+                        }
+                    }
+                }
+
+                success {
+                    echo 'Newman API Test berhasil'
+                }
+
+                failure {
+                    echo 'Newman API Test gagal. Periksa Console Output.'
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo "Status akhir Pipeline: ${currentBuild.currentResult}"
+        }
+    }
+}
+```
+
+### Apa yang dilakukan tiap stage?
+
+1. **Checkout:** `checkout scm` mengambil branch yang dipilih di job.
+2. **Check Newman:** mengecek versi Node/npm dan memastikan collection ada. Nama stage berasal dari versi awal; kini belum memeriksa Newman sampai stage berikutnya.
+3. **Install Newman:** memasang Newman `6.2.2` ke `.newman-tools` dalam workspace Jenkins. Peringatan `npm WARN deprecated` dari dependency **bukan otomatis penyebab build gagal** bila npm tetap selesai dengan exit code `0`.
+4. **Run API Tests:** membaca credential, menjalankan collection, dan membuat `reports/newman.xml`.
+5. **Post:** bila XML tersedia, Jenkins memprosesnya menjadi **Test Result**. Jika Newman gagal sebelum membuat XML, lihat **Console Output**.
+
+`disableConcurrentBuilds()` mencegah build job yang sama bertumpuk; `buildDiscarder` membatasi jumlah riwayat build. `--timeout-request 30000` membatasi satu request ke 30 detik. Perintah Newman mengembalikan exit code gagal ketika ada kegagalan pengujian.
+
+## 7. Jalankan dan periksa hasil
+
+1. Klik **Build Now** pada job.
+2. Buka nomor build terbaru → **Console Output**.
+3. Periksa urutan stage: Checkout → Check Newman → Install Newman → Run API Tests → Post.
+4. Pastikan versi Newman `6.2.2` tampil, request ke ReqRes dieksekusi, dan ringkasan assertion tidak menunjukkan kegagalan.
+5. Buka **Test Result** pada halaman build untuk melihat tes JUnit. Laporan XML berada di workspace sementara build berlangsung; Jenkins menyimpan hasil yang dipublikasikan sebagai bagian dari build.
+
+Jika collection berubah, commit dan push terlebih dahulu, lalu Build Now lagi. Jangan menilai perubahan dari file lokal yang belum dikirim ke branch `main`.
+
+## 8. Aktifkan jadwal di Jenkins
+
+Saat ini baris `triggers` masih dikomentari. Setelah build manual sukses, ubah:
+
+```groovy
+// triggers { cron('H 8 * * *') }
+```
+
+menjadi:
 
 ```groovy
 triggers { cron('H 8 * * *') }
 ```
 
-Lalu commit dan push. Jalankan **Build Now sekali lagi** supaya Jenkins membaca revisi Jenkinsfile. `H 8 * * *` berarti Jenkins memilih menit yang stabil di antara **08:00–08:59** setiap hari untuk menyebarkan beban job. Jika perlu tepat pukul **08:00**, gunakan `0 8 * * *`; Jenkins biasanya menyarankan `H` ketika banyak job mulai bersamaan. Jadwal mengikuti zona waktu **Jenkins controller**. Cek zona waktu di controller sebelum menyebutnya 08.00 WIB.
+Commit dan push, lalu jalankan **Build Now** sekali supaya Jenkins membaca revisi Jenkinsfile. `H 8 * * *` berarti **sekali sehari pada menit pilihan Jenkins antara 08:00–08:59**, berdasarkan zona waktu Jenkins controller; bukan selalu tepat 08:00. Untuk tepat 08:00 pada zona waktu controller gunakan `0 8 * * *`. Periksa zona waktu controller sebelum menyebutnya 08:00 WIB.
 
-Untuk uji jadwal, Anda dapat sementara memakai `H/5 * * * *` (sekitar tiap 5 menit), commit/push, dan tunggu build otomatis. **Kembalikan ke jadwal harian** sesudah terbukti. Pada build otomatis, Console Output biasanya menunjukkan pemicu timer.
+Untuk latihan pemicu otomatis, sementara gunakan `H/5 * * * *`, tunggu satu build terjadwal, lalu **kembalikan** ke jadwal harian. Jika cron Linux masih aktif, ingat keduanya scheduler terpisah dan dapat menjalankan tes dua kali.
 
-> [!warning] Hindari dua scheduler saat latihan
-> Jika cron Linux di `app2` masih `* * * * *`, ubah atau nonaktifkan baris tersebut sebelum menguji timer Jenkins agar tidak terjadi panggilan API setiap menit dari dua tempat.
+## 9. Troubleshooting yang benar-benar terjadi
 
-## 8. Troubleshooting
+### A. `newman: command not found` pada stage Jenkins
 
-| Gejala | Pemeriksaan |
-|---|---|
-| Job menunggu `jenkins-agent-01` | Node offline atau label berbeda; cek **Manage Jenkins → Nodes** dan sesuaikan Jenkinsfile. |
-| `node: command not found` / `newman: command not found` | Path nvm harus ada di **agent**. Periksa dua baris `export PATH` pada Jenkinsfile. |
-| `test -f postman/reqres.collection.json` gagal | File belum di-commit/push ke branch yang dibangun atau nama/path berbeda. |
-| `Credentials ... could not be found` | ID harus tepat `reqres-api-key`, jenis **Secret text**, serta scope dapat diakses job. |
-| Git checkout gagal | Cek URL repo, Git credential, branch specifier, dan SSH host key jika memakai SSH. |
-| Newman menerima 401/403 | Periksa key ReqRes yang aktif dan akses jaringan agent. Jangan tampilkan key di log. |
-| Build tidak berjalan otomatis | Periksa Jenkinsfile terbaru telah terbaca, sintaks `triggers`, dan zona waktu controller. |
+**Gejala:** stage menampilkan `Node: v20.18.1`, lalu `newman: command not found` dan build selesai dengan exit code `127`.
 
-## 9. Ringkasan konsep
+**Penyebab:** Jenkinsfile awal menambahkan path `/home/rikofirnando/.nvm/versions/node/v24.18.0/bin`, yaitu instalasi pada terminal pribadi, sementara agent Jenkins berjalan dengan Node `v20.18.1`. Newman tidak tersedia di PATH yang dipakai proses Jenkins. Perintah `echo "Newman: $(newman --version)"` bahkan bisa mencetak `Newman:` kosong sambil menyembunyikan kegagalan command substitution dalam `echo`.
 
-Cron Linux menjalankan file lokal pada jam tertentu. Jenkins menjalankan pipeline dari repo di agent, mengambil credential dari Jenkins, dan menampilkan hasil pengujian per build. `Build Now` adalah tes pertama; timer Jenkins baru diaktifkan setelah pipeline manual sukses.
+**Perbaikan:** stage **Install Newman** memasang paket ke workspace dan stage tes menjalankan executable melalui path `.newman-tools/node_modules/.bin/newman`. Verifikasi `node --version` dan `npm --version` tetap pada stage awal.
 
-## Referensi resmi
+### B. `error: unknown option '-p'` saat `Run API Tests`
 
+**Gejala:** instalasi selesai (`added 148 packages`, Newman `6.2.2`), tetapi stage tes gagal dengan `unknown option '-p'`.
+
+**Penyebab:** edit Jenkinsfile sempat menghasilkan:
+
+```bash
+.newman-tools/node_modules/.bin/newman run postman/reqres.collection.json \
+mkdir -p reports
+newman run postman/reqres.collection.json \
+```
+
+Karakter `\` pada akhir baris menyambung baris selanjutnya. Shell menafsirkan `mkdir -p reports` sebagai argumen tambahan untuk Newman, sehingga `-p` ditolak. Perintah `newman run` juga terduplikasi.
+
+**Perbaikan:** `mkdir -p reports` berdiri sendiri **sebelum** satu perintah Newman. Opsi Newman ditulis sebagai kelanjutan dari perintah tersebut. Lihat stage **Run API Tests** pada Jenkinsfile di atas.
+
+### C. `npm WARN deprecated ...`
+
+Itu peringatan dari dependency Newman. Dalam build yang dilaporkan, instalasi tetap selesai dan `newman --version` menunjukkan `6.2.2`. Fokuskan diagnosis pada baris **error** dan exit code, bukan memperlakukan setiap WARN sebagai kegagalan.
+
+### D. Error lain yang perlu dicek
+
+| Gejala | Langkah cek |
+| --- | --- |
+| Menunggu agent terus | Cek status dan label `jenkins-agent-01` di **Manage Jenkins → Nodes**. |
+| `npm: command not found` | Node/npm harus tersedia untuk akun proses pada agent Jenkins. |
+| `test -f ...` gagal | Pastikan file ada di branch `main`, path tepat, commit sudah di-push, dan checkout mengambil commit terbaru. |
+| Credential tidak ditemukan | Periksa ID `reqres-api-key`, jenis **Secret text**, dan scope yang dapat diakses job. |
+| HTTP 401/403 dari ReqRes | Periksa key aktif dan hak akses dari agent; jangan tampilkan nilai key di Console Output. |
+| Test Result tidak muncul | Lihat apakah `reports/newman.xml` tercipta; kegagalan sebelum reporter menulis XML terlihat di Console Output. |
+| Job tidak terpicu otomatis | Pastikan baris `triggers` sudah diaktifkan, perubahan di-push, Jenkins membaca Jenkinsfile terbaru, dan zona waktu controller sesuai. |
+
+## 10. Checklist akhir pembelajaran
+
+- [x] Collection berjalan manual dengan Newman.
+- [x] Credential API key disimpan di Jenkins, bukan Git.
+- [x] Jenkins mengambil Jenkinsfile dan collection dari branch `main`.
+- [x] Newman tersedia dalam workspace agent.
+- [x] Perintah Newman tidak lagi memiliki `mkdir -p` sebagai argumen.
+- [x] Build Jenkins berhasil menurut konfirmasi praktik.
+- [ ] Timer Jenkins diaktifkan dan diuji, **jika ingin menjalankan otomatis**.
+
+## Referensi
+
+- [Repository mini project](https://github.com/rikofirnando/newman-reqres-mini-project)
+- [Jenkins: Pipeline syntax](https://www.jenkins.io/doc/book/pipeline/syntax/)
 - [Jenkins: Using credentials](https://www.jenkins.io/doc/book/using/using-credentials/)
-- [Jenkins: Pipeline syntax dan triggers](https://www.jenkins.io/doc/book/pipeline/syntax/)
 - [Jenkins: Recording tests and artifacts](https://www.jenkins.io/doc/pipeline/tour/tests-and-artifacts/)
 - [Postman: Install and run Newman](https://learning.postman.com/docs/reference/newman-cli/installing-running-newman/)
