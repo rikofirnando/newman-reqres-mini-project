@@ -1,0 +1,448 @@
+{
+  "info": {
+    "_postman_id": "cc63d98b-488a-4fb3-9165-952c5aea71d1",
+    "name": "ReqRes API - Newman Scheduled Tests",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "26438622"
+  },
+  "item": [
+    {
+      "name": "Get List User",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// Validate the response code for the request.",
+              "pm.test(\"Validate response code is 200 OK\", function () {",
+              "    pm.expect(pm.response.code).to.equal(200);",
+              "});",
+              "// Validate the response body for the page number.",
+              "pm.test(\"Validate assertion page is 1\", function () {",
+              "    const response = pm.response.json();",
+              "    pm.expect(response.page).to.equal(1);",
+              "});",
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-api-key",
+            "value": "{{api_key}}"
+          }
+        ],
+        "url": "{{base_url}}/api/users"
+      },
+      "response": []
+    },
+    {
+      "name": "Get List User By Param",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// Validate response code.",
+              "pm.test(\"Response code is 200 OK\", function () {",
+              "    pm.expect(pm.response.code).to.equal(200);",
+              "});",
+              "",
+              "// Validate response body properties.",
+              "const response = pm.response.json();",
+              "",
+              "pm.test(\"Validate Body Response Properties\", function () {",
+              "    pm.expect(response.page).to.equal(2);",
+              "    pm.expect(response.data).to.be.an(\"array\");",
+              "});"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-api-key",
+            "value": "{{api_key}}"
+          }
+        ],
+        "url": "{{base_url}}/api/users?page=2"
+      },
+      "response": []
+    },
+    {
+      "name": "Get List User By ID",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// Validate response code and data fields in the response body.",
+              "pm.test(\"Validate response code is 200 OK\", function () {",
+              "    pm.expect(pm.response.code).to.equal(200);",
+              "});",
+              "",
+              "// Validate data id is 2.",
+              "pm.test(\"Validate data id is 2\", function () {",
+              "    const response = pm.response.json();",
+              "    pm.expect(response.data.id).to.equal(2);",
+              "});",
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-api-key",
+            "value": "{{api_key}}"
+          }
+        ],
+        "url": "{{base_url}}/api/users/2"
+      },
+      "response": []
+    },
+    {
+      "name": "Create User",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// Validate response code is 201 OK.",
+              "pm.test(\"Validate response code is 201 OK\", function () {",
+              "    pm.expect(pm.response.code).to.equal(201);",
+              "});",
+              "// Validate response body for name and job fields.",
+              "pm.test(\"Validate name and job fields\", function () {",
+              "    const response = pm.response.json();",
+              "    ",
+              "    pm.expect(response.name).to.exist;",
+              "    pm.expect(response.name).to.equal(\"Riko Firnando\");",
+              "    ",
+              "    pm.expect(response.job).to.exist;",
+              "    pm.expect(response.job).to.equal(\"Officer IT Operation\");",
+              "});",
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-api-key",
+            "value": "{{api_key}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"Riko Firnando\", \"job\": \"Officer IT Operation\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/users"
+      },
+      "response": []
+    },
+    {
+      "name": "Create User v2",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// Validate response code is 201 OK.",
+              "pm.test(\"Validate response code is 201 OK\", function () {",
+              "    pm.expect(pm.response.code).to.equal(201);",
+              "});",
+              "",
+              "// Validate response body for name, job fields and dynamic id.",
+              "pm.test(\"Validate name, job fields and dynamic id\", function () {",
+              "    const response = pm.response.json();",
+              "    ",
+              "    pm.expect(response.name).to.exist;",
+              "    pm.expect(response.name).to.be.a('string');",
+              "    ",
+              "    pm.expect(response.job).to.exist;",
+              "    pm.expect(response.job).to.be.a('string');",
+              "    ",
+              "    pm.expect(response.id).to.exist;",
+              "    pm.expect(response.id).to.be.a('string').and.not.to.be.empty;",
+              "});",
+              "pm.test(\"Response matches request\", function () {",
+              "    const response = pm.response.json();",
+              "    pm.expect(response.name).to.equal(\"Riko Firnando\");",
+              "    pm.expect(response.job).to.equal(\"Officer IT Operation\");",
+              "});"
+            ],
+            "type": "text/javascript",
+            "packages": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "x-api-key",
+            "value": "{{api_key}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"Riko Firnando\", \"job\": \"Officer IT Operation\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/users"
+      },
+      "response": []
+    },
+    {
+      "name": "Update User",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Validate response code is 200 OK\", function () {",
+              "    pm.expect(pm.response.code).to.equal(200);",
+              "});",
+              "pm.test(\"Validate response Body\", function () {",
+              "    const response = pm.response.json();",
+              "    ",
+              "    pm.expect(response).to.have.property('name');",
+              "    pm.expect(response.name).to.equal('Riko Firnando UPDATE');",
+              "    ",
+              "    pm.expect(response).to.have.property('job');",
+              "    pm.expect(response.job).to.equal('SQA Engineer UPDATE');",
+              "});",
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "x-api-key",
+            "value": "{{api_key}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"Riko Firnando UPDATE\", \"job\": \"SQA Engineer UPDATE\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/users/3"
+      },
+      "response": []
+    },
+    {
+      "name": "Update User v2",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Validate response code is 200 OK\", function () {",
+              "    pm.expect(pm.response.code).to.equal(200);",
+              "});",
+              "pm.test(\"Validate response Body\", function () {",
+              "    const response = pm.response.json();",
+              "    ",
+              "    pm.expect(response).to.have.property('name');",
+              "    pm.expect(response.name).to.equal('Riko Firnando UPDATE');",
+              "    ",
+              "    pm.expect(response).to.have.property('job');",
+              "    pm.expect(response.job).to.equal('SQA Engineer UPDATE');",
+              "});",
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "x-api-key",
+            "value": "{{api_key}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"Riko Firnando UPDATE\", \"job\": \"SQA Engineer UPDATE\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/users/3"
+      },
+      "response": []
+    },
+    {
+      "name": "Delete User",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// Delete user and validate response code is 204 No Content",
+              "pm.test(\"Validate response code is 204 No Content\", function () {",
+              "    pm.expect(pm.response.code).to.equal(204);",
+              "});",
+              "",
+              "// Validate response body is empty to ensure no data is returned after deletion",
+              "pm.test(\"Validate response body is empty\", function () {",
+              "    const responseBody = pm.response.text();",
+              "    pm.expect(responseBody).to.be.empty;",
+              "});",
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "x-api-key",
+            "value": "{{api_key}}"
+          }
+        ],
+        "url": "{{base_url}}/api/users/2"
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://reqres.in"
+    }
+  ]
+}
