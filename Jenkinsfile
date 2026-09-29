@@ -21,10 +21,19 @@ pipeline {
             steps {
                 sh '''#!/usr/bin/env bash
 set -Eeuo pipefail
-export PATH="/home/rikofirnando/.nvm/versions/node/v24.18.0/bin:$PATH"
-echo "Node: $(node --version)"
-echo "Newman: $(newman --version)"
+node --version
+npm --version
 test -f postman/reqres.collection.json
+'''
+            }
+        }
+
+        stage('Install Newman') {
+            steps {
+                sh '''#!/usr/bin/env bash
+set -Eeuo pipefail
+npm install --prefix .newman-tools --no-save --no-package-lock --no-audit --no-fund newman@6.2.2
+.newman-tools/node_modules/.bin/newman --version
 '''
             }
         }
@@ -36,7 +45,7 @@ test -f postman/reqres.collection.json
 set -Eeuo pipefail
 set +x
 umask 077
-export PATH="/home/rikofirnando/.nvm/versions/node/v24.18.0/bin:$PATH"
+.newman-tools/node_modules/.bin/newman run postman/reqres.collection.json \
 mkdir -p reports
 newman run postman/reqres.collection.json \
   --env-var "api_key=$REQRES_API_KEY" \
